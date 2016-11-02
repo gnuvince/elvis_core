@@ -18,12 +18,13 @@
          rock_this/1,
          rock_without_colors/1,
          rock_with_rule_groups/1,
-         %% Utill & Config
+         %% Util & Config
          throw_configuration/1,
          find_file_and_check_src/1,
          find_file_with_ignore/1,
          invalid_file/1,
-         to_string/1
+         to_string/1,
+         gitignore_wildmatch/1
         ]).
 
 -define(EXCLUDED_FUNS,
@@ -278,6 +279,200 @@ to_string(_Config) ->
     "1" = elvis_utils:to_str(1),
     "hello" = elvis_utils:to_str(<<"hello">>),
     "atom" = elvis_utils:to_str(atom).
+
+
+-spec gitignore_wildmatch(config()) -> any().
+gitignore_wildmatch(_Config) ->
+    TestCases = [
+                   %% basic patterns
+                   {true , "ab", "ab"}
+                 , {false, "ab", "Ab"}
+                 , {false, "ab", "cab"}
+                 , {false, "ab", "abe"}
+                 , {false, "ab", "a"}
+                 , {false, "ab", "b"}
+                 , {false, "ab", ""}
+
+                 %% escapes
+                 , {true , "\\?\\*\\\\", "?*\\"}
+                 , {true , "\\?\\*\\*", "?**"}
+
+                 %% question mark wildcard
+                 , {true , "?", "a"}
+                 , {true , "?", "1"}
+                 , {true , "?", "."}
+                 , {true , "a?c", "abc"}
+                 , {true , "a?c", "aBc"}
+                 , {true , "a?c", "a1c"}
+                 , {true , "a?c", "a.c"}
+                 , {false, "a?b", "a/b"}
+
+                 %% single star wildcard
+                 , {true , "*", ""}
+                 , {true , "*", "a"}
+                 , {true , "*", "ab"}
+                 , {true , "*", "abc"}
+                 , {true , "*.txt", ".txt"}
+                 , {true , "*.txt", "a.txt"}
+                 , {true , "*.txt", "ab.txt"}
+                 , {false, "*.txt", "a/b.txt"}
+
+                 %% double star wildcard
+                 , {true , "a/**/b", "a/b"}
+                 , {true , "a/**/b", "a//b"}
+                 , {true , "a/**/b", "a/x/b"}
+                 , {true , "a/**/b", "a/x/y/b"}
+                 , {true , "a/**/b", "a//x/y/b"}
+                 , {true , "a/**/b", "a/x//y/b"}
+
+                 %% mix and match
+                , {true , "**/*/?.txt", "foo/bar/1.txt"}
+                , {true , "**/*/?.txt", "foo/bar/baz/1.txt"}
+                ],
+    %% Adapted from git's t/t3070-wildmatch.sh
+    GitTestCases = [
+                    %% Basic wildmat features
+                     {true,  "foo", "foo"}
+                   , {false, "bar", "foo"}
+                   , {true,  "", ""}
+                   , {true,  "???", "foo"}
+                   , {false, "??", "foo"}
+                   , {true,  "*", "foo"}
+                   , {true,  "f*", "foo"}
+                   , {false, "*f", "foo"}
+                   , {true,  "*foo*", "foo"}
+                   , {true,  "*ob*a*r*", "foobar"}
+                   , {true,  "*ab", "aaaaaaabababab"}
+                   , {true,  "foo\\*", "foo*"}
+                   , {false, "foo\\*bar", "foobar"}
+                   , {true,  "f\\\\oo", "f\\oo"}
+                   , {true,  "*[al]?", "ball"}
+                   , {false, "[ten]", "ten"}
+                   , {false, "**[!te]", "ten"}
+                   , {false, "**[!ten]", "ten"}
+                   , {true,  "t[a-g]n", "ten"}
+                   , {false, "t[!a-g]n", "ten"}
+                   , {true,  "t[!a-g]n", "ton"}
+                   , {true,  "t[^a-g]n", "ton"}
+                   , {true,  "a[]]b", "a]b"}
+                   , {true,  "a[]-]b", "a-b"}
+                   , {true,  "a[]-]b", "a]b"}
+                   , {false, "a[]-]b", "aab"}
+                   , {true,  "a[]a-]b", "aab"}
+                   , {true,  "]", "]"}
+
+                    %% Extended slash-matching features
+                   , {false, "foo*bar", "foo/baz/bar"}
+                   , {false, "foo**bar", "foo/baz/bar"}
+                   , {false, "foo**bar", "foobazbar"}
+                   , {true,  "foo/**/bar", "foo/baz/bar"}
+                   , {true,  "foo/**/**/bar", "foo/baz/bar"}
+                   , {true,  "foo/**/bar", "foo/b/a/z/bar"}
+                   , {true,  "foo/**/**/bar", "foo/b/a/z/bar"}
+                   , {true,  "foo/**/bar", "foo/bar"}
+                   , {true,  "foo/**/**/bar", "foo/bar"}
+                   , {false, "foo?bar", "foo/bar"}
+                   , {false, "foo[/]bar", "foo/bar"}
+                   , {false, "f[^eiu][^eiu][^eiu][^eiu][^eiu]r", "foo/bar"}
+                   , {true,  "f[^eiu][^eiu][^eiu][^eiu][^eiu]r", "foo-bar"}
+                   , {true,  "**/foo", "foo"}
+                   , {true,  "**/foo", "/foo"}
+                   , {true,  "**/foo", "bar/baz/foo"}
+                   , {false, "*/foo", "bar/baz/foo"}
+                   , {false, "**/bar*", "foo/bar/baz"}
+                   , {true,  "**/bar/*", "deep/foo/bar/baz"}
+                   , {false, "**/bar/*", "deep/foo/bar/baz/"}
+                   , {true,  "**/bar/**", "deep/foo/bar/baz/"}
+                   , {false, "**/bar/*", "deep/foo/bar"}
+                   , {true,  "**/bar/**", "deep/foo/bar/"}
+                   , {false, "**/bar**", "foo/bar/baz"}
+                   , {true,  "*/bar/**", "foo/bar/baz/x"}
+                   , {false, "*/bar/**", "deep/foo/bar/baz/x"}
+                   , {true,  "**/bar/*/*", "deep/foo/bar/baz/x"}
+
+                   , {false, "a[c-c]st", "acrt"}
+                   , {true,  "a[c-c]rt", "acrt"}
+                   , {false, "[!]-]", "]"}
+                   , {true,  "[!]-]", "a"}
+                   , {false, "\\", ""}
+                   , {false, "\\", "\\"}
+                   , {false, "*/\\", "/\\"}
+                   , {true,  "*/\\\\", "/\\"}
+                   , {true,  "foo", "foo"}
+                   , {true,  "@foo", "@foo"}
+                   , {false, "@foo", "foo"}
+                   , {true,  "\\[ab]", "[ab]"}
+                   , {true,  "[[]ab]", "[ab]"}
+                   , {true,  "[[:]ab]", "[ab]"}
+                   %%, {false, "[[::]ab]", "[ab]"}
+                   , {true,  "[[:digit]ab]", "[ab]"}
+                   , {true,  "[\\[:]ab]", "[ab]"}
+                   , {true,  "\\??\\?b", "?a?b"}
+                   , {true,  "\\a\\b\\c", "abc"}
+                   , {false, "", "foo"}
+                   , {true,  "**/t[o]", "foo/bar/baz/to"}
+
+                   , {true,  "[\\\\-^]", "]"}
+                   , {false, "[\\\\-^]", "["}
+                   , {true,  "[\\-_]", "-"}
+                   , {true,  "[\\]]", "]"}
+                   , {false, "[\\]]", "\\]"}
+                   , {false, "[\\]]", "\\"}
+                   , {false, "a[]b", "ab"}
+                   , {false, "a[]b", "a[]b"}
+                   , {false, "ab[", "ab["}
+                   , {false, "[!", "ab"}
+                   , {false, "[-", "ab"}
+                   , {true,  "[-]", "-"}
+                   , {false, "[a-", "-"}
+                   , {false, "[!a-", "-"}
+                   , {true,  "[--A]", "-"}
+                   , {true,  "[--A]", "5"}
+                   , {true,  "[ --]", " "}
+                   , {true,  "[ --]", "$"}
+                   , {true,  "[ --]", "-"}
+                   , {false, "[ --]", "0"}
+                   , {true,  "[---]", "-"}
+                   , {true,  "[------]", "-"}
+                   , {false, "[a-e-n]", "j"}
+                   , {true,  "[a-e-n]", "-"}
+                   , {true,  "[!------]", "a"}
+                   , {false, "[]-a]", "["}
+                   , {true,  "[]-a]", "^"}
+                   , {false, "[!]-a]", "^"}
+                   , {true,  "[!]-a]", "["}
+                   , {true,  "[a^bc]", "^"}
+                   , {true,  "[a-]b]", "-b]"}
+                   , {false, "[\\]", "\\"}
+                   , {true,  "[\\\\]", "\\"}
+                   , {false, "[!\\\\]", "\\"}
+                   , {true,  "[A-\\\\]", "G"}
+                   , {false, "b*a", "aaabbb"}
+                   , {false, "*ba*", "aabcaa"}
+                   , {true,  "[,]", ","}
+                   , {true,  "[\\\\,]", ","}
+                   , {true,  "[\\\\,]", "\\"}
+                   , {true,  "[,-.]", "-"}
+                   , {false, "[,-.]", "+"}
+                   , {false, "[,-.]", "-.]"}
+                   , {true,  "[\\1-\\3]", "2"}
+                   , {true,  "[\\1-\\3]", "3"}
+                   , {false, "[\\1-\\3]", "4"}
+                   , {true,  "[[-\\]]", "\\"}
+                   , {true,  "[[-\\]]", "["}
+                   , {true,  "[[-\\]]", "]"}
+                   , {false, "[[-\\]]", "-"}
+                   ],
+    TryMatch = fun(F, R, Pat, Text) ->
+                       try
+                           R = F(Pat, Text)
+                       catch
+                           _:_ -> throw({wildmatch_failure, F, R, Pat, Text})
+                       end
+               end,
+    [TryMatch(fun elvis_gitignore:wildmatch/2, R, Pat, Text) || {R, Pat, Text} <- TestCases],
+    [TryMatch(fun elvis_gitignore:wildmatch/2, R, Pat, Text) || {R, Pat, Text} <- GitTestCases].
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Private
