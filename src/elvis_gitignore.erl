@@ -109,7 +109,21 @@ tokenize_pattern([$\\, C | Rest]) -> [C | tokenize_pattern(Rest)];
 tokenize_pattern([C | Rest])      -> [C | tokenize_pattern(Rest)].
 
 
-%% starters (6)
+%% The tokenization of a class is a bit complex and deserves some
+%% explanations.
+%% The beginning of the class has 6 forms that we distinguish:
+%%
+%% 1. "[!]..." : a negated class where the first character is ']';
+%%    unless it is escaped, this is the only place that ']' can appear;
+%% 2. "[^]..." : this is the same thing as form 1;
+%% 3. "[!..." : a negated class, i.e. a character cannot be any listed here;
+%% 4. "[^..." : the same thing as form 3;
+%% 5. "[]..." : a class containing ']' without escaping it;
+%% 6. "[..." : a class, i.e. a matching character must be one listed here.
+%%
+%% Once we know what kind of class (regular or negated) we are dealing with,
+%% and whether we should include ']' in the class's set, we invoke the
+%% token_class2/3 function.
 tokenize_class([$[, $!, $] | Rest]) -> tokenize_class2(Rest, "]", nclass);
 tokenize_class([$[, $^, $] | Rest]) -> tokenize_class2(Rest, "]", nclass);
 tokenize_class([$[, $! | Rest])     -> tokenize_class2(Rest, "",  nclass);
@@ -117,6 +131,16 @@ tokenize_class([$[, $^ | Rest])     -> tokenize_class2(Rest, "",  nclass);
 tokenize_class([$[, $] | Rest])     -> tokenize_class2(Rest, "]", class);
 tokenize_class([$[ | Rest])         -> tokenize_class2(Rest, "",  class).
 
+%% A dash ('-') signifies a range in a class; if we want to include a
+%% literal dash, we must either escape it or place it as the last
+%% character of the range.
+%%
+%% In Git's wildmatch() implementation, a class *cannot* match a slash,
+%% i.e., wildmatch("[/]", "/") returns false.  When we have a negative
+%% match, we always add the '/' character to the class to make sure it
+%% will not be matched.  When we are building the class's set, we skip
+%% over slashes.
+%% BUG: The pattern [.-^] will incorrectly accept the slash.
 tokenize_class2([$-, $] | Rest], Acc, ClassType) ->
     {{ClassType, lists:reverse([$-] ++ include_slash(ClassType) ++ Acc)}, Rest};
 tokenize_class2([$] | Rest], Acc, ClassType) ->
