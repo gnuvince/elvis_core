@@ -25,7 +25,8 @@
          no_debug_call/3,
          no_nested_try_catch/3,
          no_seqbind/3,
-         no_useless_seqbind/3
+         no_useless_seqbind/3,
+         forgot_seqbind/3
         ]).
 
 -define(LINE_LENGTH_MSG, "Line ~p is too long: ~s.").
@@ -121,6 +122,9 @@
 
 -define(NO_USELESS_SEQBIND,
         "Module declares seqbind on line ~p, but no seq-bindings are used.").
+
+-define(POSSIBLY_FORGOTTEN_SEQBIND,
+        "Possibly forgot a seq-binding in ~s (~p) for the variables: ~p~n").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Rules
@@ -1245,3 +1249,54 @@ uses_seq_bindings(Root) ->
                     end,
                     Root),
     SeqBindings /= [].
+
+
+%% Warn the user if he possibly forgot to add the @
+%% to a variable that should be a seq binding.
+%% Example:
+%% f() ->
+%%   X@ = 1,
+%%   X = X@ + 1, % Did you mean "X@ = X@ + 1"?
+%%   X@.
+-spec forgot_seqbind(elvis_config:config(),
+                     elvis_file:file(),
+                     empty_rule_config()) ->
+    [elvis_result:item()].
+forgot_seqbind(Config, Target, _RuleConfig) ->
+    {Root, _} = elvis_file:parse_tree(Config, Target),
+    FunctionDefs = elvis_code:find(fun(Node) ->
+        ktn_code:type(Node) == function
+    end, Root),
+    FunctionHeads = lists:flatmap(fun ktn_code:content/1, FunctionDefs),
+    AllVars = lists:map(fun all_vars/1, FunctionHeads),
+    HeadsVars = lists:zip(FunctionHeads, AllVars),
+    PossibleProblems = lists:filtermap(fun({Head, Vars}) ->
+        SeqVars = sets:filter(fun(V) ->
+            sets:is_element(V ++ "@", Vars)
+        end, Vars),
+        case sets:size(SeqVars) of
+            0 -> false;
+            _ -> {true, {ktn_code:attr(text, Head), ktn_code:attr(location, Head), SeqVars}}
+        end
+    end, HeadsVars),
+    lists:map(fun({FunName, {Line, _}, Vars}) ->
+        #{message => io_lib:format(?POSSIBLY_FORGOTTEN_SEQBIND,
+                                   [FunName, Line, sets:to_list(Vars)]),
+          line_num => Line,
+          info => []
+         }
+    end, PossibleProblems).
+
+
+vars(Node) ->
+    VarNodes = elvis_code:find(fun(X) ->
+        ktn_code:type(X) =:= var
+    end, Node),
+    [ktn_code:attr(text, VarNode) || VarNode <- VarNodes].
+
+
+all_vars(FunHead) ->
+    ParamVars = lists:flatmap(fun vars/1, ktn_code:node_attr(pattern, FunHead)),
+    GuardVars = lists:flatmap(fun vars/1, lists:flatten(ktn_code:node_attr(guards, FunHead))),
+    ExprVars = vars(FunHead),
+    sets:from_list(ParamVars ++ GuardVars ++ ExprVars).

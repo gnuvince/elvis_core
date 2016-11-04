@@ -33,6 +33,7 @@
          verify_no_nested_try_catch/1,
          verify_no_seqbind/1,
          verify_no_useless_seqbind/1,
+         verify_forgot_seqbind/1,
          %% Non-rule
          results_are_ordered_by_line/1
         ]).
@@ -574,6 +575,22 @@ verify_no_useless_seqbind(_Config) ->
     {ok, FailPath} = elvis_test_utils:find_file(SrcDirs, "fail_no_useless_seqbind.erl"),
     [] = elvis_style:no_useless_seqbind(ElvisConfig, PassPath, #{}),
     [#{line_num := 3}] = elvis_style:no_useless_seqbind(ElvisConfig, FailPath, #{}).
+
+
+-spec verify_forgot_seqbind(config()) -> any().
+verify_forgot_seqbind(_Config) ->
+    ElvisConfig = elvis_config:default(),
+    SrcDirs = ["../../test/examples"],
+    File = "fail_forgot_seqbind.erl",
+    {ok, Path} = elvis_test_utils:find_file(SrcDirs, File),
+    [
+     #{line_num := 14},
+     #{line_num := 15},
+     #{line_num := 19},
+     #{line_num := 24},
+     #{line_num := 25}
+    ] = elvis_style:forgot_seqbind(ElvisConfig, Path, #{}).
+
 
 -spec results_are_ordered_by_line(config()) -> true.
 results_are_ordered_by_line(_Config) ->
